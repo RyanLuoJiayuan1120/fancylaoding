@@ -1,0 +1,19 @@
+# Gradle / build output
+.gradle/
+build/
+out/
+dist/
+run/
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep the wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
