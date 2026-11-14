@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "fancyloading",
+  "version": "${version}",
+  "name": "Fancy Loading",
+  "description": "Early game loading screen (video / static frame / log / bar) plus the full-width world loading bar.",
+  "authors": ["RyanLuoJiayuan1120"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "preLaunch": ["com.example.videoloading.early.PreLaunchHook"],
+    "client": [
+      "com.example.videoloading.client.VideoLoadingClient",
+      "com.example.worldloading.WorldLoadingClient"
+    ]
+  },
+  "mixins": [
+    "videoloading.mixins.json",
+    "worldloading.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "1.21.11",
+    "java": ">=21"
+  }
+}

@@ -13,7 +13,6 @@ public final class WorldLoadingClient implements ClientModInitializer {
     public void onInitializeClient() {
         WLConfig.load();
         XingkaiFont.init();
-        VideoBackground.startVideoAsync();
         LOGGER.info("worldloading v2 ready: enabled={}, barWidth={}, barY={}, textY={}, video={}",
                 WLConfig.enabled, WLConfig.barWidth, WLConfig.barY, WLConfig.textY,
                 WLConfig.videoEnabled);

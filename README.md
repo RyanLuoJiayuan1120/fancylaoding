@@ -1,28 +1,24 @@
 # Fancy Loading
 
-Fabric 1.21.11 客户端加载界面合集，包含两个可独立安装的 mod：
+Fabric 1.21.11 客户端加载界面 mod，把**游戏加载**和**世界加载**合在一个 jar 里：
 
-| 模块 | 作用 | 主要产物 |
-|---|---|---|
-| [`videoloading`](videoloading/) | **游戏加载**：Mixin 引导阶段建早期窗口，A 段播帧序列 + 进度条；B 段静态帧 + 日志 + 进度条 | `videoloading-0.1.0.jar`（约 44 KB，资源外置） |
-| [`worldloading`](worldloading/) | **世界加载**：接管 `LevelLoadingScreen`，全宽条 + 帧序列视频背景 + 行楷百分比 | `worldloading-0.1.0.jar`（约 19 MB，视频帧内置） |
+- **A 段（Mixin 引导）**：早期 GLFW 窗口，直接播放 MP4（自动安装 FFmpeg）或帧序列，显示进度条和最新游戏日志。
+- **B 段（资源重载 / Mojang logo）**：静态帧背景 + 进度条 + 日志，保留原版 `onFinish`，不会卡 100%。
+- **世界加载（`LevelLoadingScreen`）**：全宽进度条 + 视频背景 + 左下角行楷百分比。
 
 > 「Game Loading Screen」和「World Loading Screen」是两件事：
 > 前者是 Mojang logo / 资源重载阶段，后者是创建世界、生成出生点的阶段。
 
 ## 特性
 
-- **A 段早期窗口**：Mixin 引导阶段直接播放 MP4（自动安装 FFmpeg），或回退帧序列；同时显示进度条和最新游戏日志。
-- **单窗口交接**：同一个 GLFW 句柄 / GL 上下文交给 Minecraft，不闪第二个窗口。
-- **B 段不卡死**：保留原版 `LoadingOverlay` 的 `onFinish`，只在 `TAIL` 覆盖绘制。
-- **B 段静态帧**：不再渲染视频，用 `background.png` 作为背景，避免资源重载期做视频纹理。
-- **日志行**：Log4j Appender 捕获原样日志；A/B 各显示最新一行；B 段空档显示
-  `Loading resource packs...`。
-- **统一进度条**：以 A 段为基准，三条都是全宽、`0.84h`、6 物理像素高、
-  深色底 + 白色填充、文字左对齐 `3%`。
-- **LXGW WenKai Lite**：v2 百分比和 v1 日志行共用同一外部 TTF；字体不进 jar。
-- **MP4 直读**：首次使用自动从 GitHub 下载对应平台 FFmpeg，校验 SHA-256 后解压到 `config/fancyloading/tools/`；失败回退 PNG 序列。
-- **worldloading 内置视频帧**：75 张 480×270 PNG，15 fps，COVER 缩放；没有 MP4 时使用。
+- 单窗口 GLFW 句柄交接，不闪第二个窗口
+- A 段 MP4 直读；B 段用 A 段第一帧自动生成 `background.png`
+- 世界加载支持 MP4，回退 jar 内置 75 张 PNG
+- 三条进度条以 A 段为基准：全宽、`0.84h`、6 物理像素高、深色底 + 白色填充
+- 文字左对齐 `3%`，14 物理像素高，4 方向深色描边
+- 日志行：Log4j Appender 原样捕获；B 段空档显示 `Loading resource packs...`
+- 字体：LXGW WenKai Lite，外部文件，不进 jar
+- FFmpeg：首次使用自动从 GitHub 下载、校验 SHA-256、解压，用户无需安装
 
 ## 环境
 
@@ -33,82 +29,129 @@ Fabric 1.21.11 客户端加载界面合集，包含两个可独立安装的 mod�
 
 ## 构建
 
-在仓库根目录：
-
 ```bash
-# 游戏加载（A/B 段）
-./gradlew -p videoloading build
-
-# 世界加载
-./gradlew -p worldloading build
+JAVA_HOME=/path/to/jdk-25 \
+GRADLE_USER_HOME=/path/to/gradle-home \
+./gradlew build --offline
 ```
 
 产物：
 
 ```text
-videoloading/build/libs/videoloading-0.1.0.jar
-worldloading/build/libs/worldloading-0.1.0.jar
+build/libs/fancyloading-0.1.0.jar
 ```
 
-当前开发环境用 Loom `1.19-SNAPSHOT` + Mojang mappings，输出 Java 21 字节码。
-离线构建需要预先缓存 Loom / Gradle 依赖；CI 或新机器直接联网构建即可。
+Loom `1.19-SNAPSHOT` + Mojang mappings，输出 Java 21 字节码。
 
 ## 安装
 
-把需要的 jar 放进 `mods/`。两个 mod 可以同时安装：一个管游戏加载，一个管世界加载。
-
-### 外部资源
-
-字体（两个 mod 共用，可选但推荐）：
+1. 把 `fancyloading-0.1.0.jar` 放进 `mods/`。
+2. 字体（推荐）：
 
 ```text
 config/worldloading/fonts/LXGWWenKaiLite-Regular.ttf
 ```
 
 下载：[lxgw/LxgwWenKai-Lite](https://github.com/lxgw/LxgwWenKai-Lite)
-（OFL 许可，仓库内附 `OFL.txt` 时应一并保留）。
+（OFL；下载目录保留其 `OFL.txt`）。
 
-`videoloading` 还需要：
+3. 可选 MP4：
 
 ```text
-config/videoloading.properties
-config/videoloading/video.mp4                  # 可选，优先使用
-config/videoloading/frames/frame_000.png ...   # 没有 MP4 时的回退帧序列
-config/videoloading/background.png             # A 段第一帧自动生成，无需手放
+config/videoloading/video.mp4     # A 段
+config/worldloading/video.mp4     # 世界加载
 ```
 
-`worldloading` 需要的视频帧已打进 jar，只需要字体。
+4. 没有 MP4 时的 A 段回退帧序列：
 
-配置示例见 [`config.example/`](config.example/)；完整说明见各模块 README：
+```text
+config/videoloading/frames/frame_000.png ...
+```
 
-- [`videoloading/README.md`](videoloading/README.md)
-- [`worldloading/README.md`](worldloading/README.md)
+5. B 段背景无需手放：A 段第一帧会自动写成
+   `config/videoloading/background.png`。
+
+配置示例在 `config.example/`。
+
+## 配置
+
+`config/videoloading.properties` 关键项：
+
+```properties
+enabled=true
+adoptWindow=true
+windowWidth=854
+windowHeight=480
+
+videoPath=config/videoloading/video.mp4
+videoWidth=960
+videoHeight=540
+videoFps=15
+
+framesDir=config/videoloading/frames
+background=config/videoloading/background.png
+fontPath=config/worldloading/fonts/LXGWWenKaiLite-Regular.ttf
+fps=15
+maxHoldMs=3000
+mixinShare=0.8
+
+barColor=FFFFFFFF
+barBgColor=AA000000
+barWidth=1.0
+barHeight=6
+barY=0.84
+```
+
+`config/worldloading.properties` 关键项：
+
+```properties
+enabled=true
+barWidth=1.0
+barHeight=6
+barY=0.84
+textY=0.78
+textPadding=0.03
+fontSize=14
+fontPath=config/worldloading/fonts/LXGWWenKaiLite-Regular.ttf
+
+videoPath=config/worldloading/video.mp4
+videoWidth=960
+videoHeight=540
+videoFps=15
+videoDim=0.18
+```
 
 ## FFmpeg 自举
 
-两个 mod 共用 `common-video`：
+首次需要 MP4 时：
 
-- 首次需要 MP4 时，按 `os.name` / `os.arch` 选择平台
-- 依次尝试 `gh-proxy.com`、`ghfast.top`、`ghproxy.net`，最后回退 GitHub 直连
-- 下载固定版本 `eugeneware/ffmpeg-static` `b6.1.1`，校验 SHA-256
-- 解压到 `config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg`
-- `ffmpeg -version` 自检通过后才启用；失败或离线时回退 PNG 序列
-- 不要求用户安装 FFmpeg
+- 按 `os.name` / `os.arch` 选平台：Windows x64、Linux x64/arm64、macOS x64/arm64
+- 加速站顺序：`gh-proxy.com` → `ghfast.top` → `ghproxy.net` → GitHub 直连
+- 下载固定版本 `eugeneware/ffmpeg-static` `b6.1.1`
+- 校验固定 SHA-256，解压到：
 
-支持平台：`windows-x64`、`linux-x64`、`linux-arm64`、`macos-arm64`、`macos-x64`。
-FFmpeg 构建为 GPLv3，下载目录内会保留其 `LICENSE`。
+```text
+config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
+```
+
+- `ffmpeg -version` 自检通过才启用；失败/离线回退 PNG 帧序列
+- 用户不需要自己安装 FFmpeg
+- FFmpeg 构建为 GPLv3，下载目录内保留其 `LICENSE`
 
 ## 目录结构
 
 ```text
 fancylaoding/
-├── videoloading/          # 早期窗口 + A/B 游戏加载
-│   ├── src/main/java/...
-│   └── src/main/resources/
-├── worldloading/          # LevelLoadingScreen 世界加载条
-│   ├── src/main/java/...
-│   └── src/main/resources/assets/worldloading/textures/loading/
-├── common-video/          # FFmpeg 下载/解压 + 原始帧解码（两个 mod 共用）
+├── src/main/java/com/example/
+│   ├── videoloading/       # A/B 游戏加载
+│   ├── worldloading/       # LevelLoadingScreen 世界加载
+│   └── fancyloading/video/ # FFmpeg 下载/解压 + 原始帧解码
+├── src/main/resources/
+│   ├── fabric.mod.json
+│   ├── videoloading.mixins.json
+│   ├── worldloading.mixins.json
+│   ├── videoloading.properties.example
+│   └── assets/worldloading/textures/loading/
 ├── config.example/
 ├── gradle/wrapper/
 ├── gradlew
@@ -117,22 +160,21 @@ fancylaoding/
 
 ## 实现备注
 
-- A 段 GL 用 **framebuffer 物理像素**；B 段 / v2 用 **GUI 缩放坐标**。
-  因此 B/v2 的 `barHeight`、字号会除以 `guiScale`，视觉尺寸与 A 一致。
-- 早期代码（`early/` 包）不能 import Minecraft 类，否则会在 Mixin 引导期
+- A 段 GL 用 **framebuffer 物理像素**；B 段 / 世界加载用 **GUI 缩放坐标**。
+  因此后两者的 `barHeight`、字号会除以 `guiScale`，视觉尺寸与 A 一致。
+- `early/` 包不能 import Minecraft 类，否则会在 Mixin 引导期
   触发 `MixinTargetAlreadyLoadedException`。
 - 当前 MixinExtras 0.5.0 + ASM 9.9 环境下不要用 `@Redirect`；
   窗口接管用 `@WrapOperation`，屏幕接管用 `@Inject`。
-- 字体是外部文件，不打包；缺少字体时只画条，不阻断启动。
+- 字体是外部文件；缺少字体时只画条，不阻断启动。
 
 ## 已知限制
 
-- `MixinProbe` 在该 Fabric Loader 上可能计数为 0，A 段进度会走时间保底。
-- B 段日志行使用 `DynamicTexture`；若个别环境看不到该行，A 段日志和进度条仍正常。
-- 视频帧/字体体积较大，仓库不提交构建产物和字体文件；按上面的资源路径自行放置。
-- 两个 mod 同时安装时，共享 `common-video` 类会触发 Fabric duplicate class 警告；
-  两份字节码一致，当前不影响功能。
 - 首次播放 MP4 需要联网下载 FFmpeg；离线环境可预置 `config/fancyloading/tools/`。
+- FFmpeg 下载走 GitHub/加速站；网络受限时回退 PNG 序列。
+- 世界加载的 MP4 通过 `DynamicTexture` 每帧更新，低端 GPU 上比 PNG 序列更吃带宽。
+- 与 Fox 的 `fox-party-hud` 同时安装时，对方的 `WorldLoadingScreenMixin` 会取消
+  `LevelLoadingScreen.render`，本 mod 的世界加载画面会被它覆盖；两者不要同时用。
 
 ## License
 
