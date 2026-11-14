@@ -106,19 +106,31 @@ public final class FfmpegProvisioner {
                 throw new IOException("no FFmpeg asset for " + key);
             }
 
-            Path dir = FfmpegPaths.toolRoot(gameDir)
-                    .resolve("ffmpeg-" + VERSION + "-" + key);
+            Path toolRoot = FfmpegPaths.toolRoot(gameDir);
+            Path dir = toolRoot.resolve("ffmpeg-" + VERSION + "-" + key);
             Path binary = dir.resolve(key.startsWith("win") ? "ffmpeg.exe" : "ffmpeg");
             Path marker = dir.resolve(".installed");
+            Path failed = dir.resolve(".failed");
+
+            if (FfmpegPaths.isAndroid()) {
+                cleanupLegacy(gameDir, toolRoot, log);
+            }
+
+            if (Files.isRegularFile(failed) && System.getProperty("fancyloading.ffmpegRetry") == null) {
+                throw new IOException("FFmpeg previously failed on this device, skipping download: "
+                        + firstLine(Files.readString(failed)));
+            }
+            Files.deleteIfExists(failed);
 
             if (Files.isRegularFile(binary) && Files.isRegularFile(marker)
-                    && markerContains(marker, asset.sha256) && smokeTest(binary)) {
+                    && markerContains(marker, asset.sha256) && smokeTest(binary, log)) {
                 log.accept("FFmpeg ready: " + binary);
                 return binary;
             }
 
             Files.createDirectories(dir);
-            log.accept("FFmpeg tool dir: " + dir + (FfmpegPaths.isAndroid() ? " (Android private files)" : ""));
+            log.accept("FFmpeg tool dir: " + dir
+                    + (FfmpegPaths.isAndroid() ? " (Android private files, tmp=" + System.getProperty("java.io.tmpdir") + ")" : ""));
             Path gz = dir.resolve(asset.file + ".part");
             Path out = dir.resolve(binary.getFileName() + ".part");
             Files.deleteIfExists(gz);
@@ -134,14 +146,22 @@ public final class FfmpegProvisioner {
             gunzip(gz, out);
             Files.deleteIfExists(gz);
             makeExecutable(out);
-            if (!smokeTest(out)) {
+            if (!smokeTest(out, log)) {
                 Files.deleteIfExists(out);
-                throw new IOException("downloaded FFmpeg failed `-version` smoke test");
+                try {
+                    Files.createDirectories(dir);
+                    Files.writeString(failed, "version=" + VERSION
+                            + "\npath=" + out + "\nreason=exec smoke test failed (see log above)\n");
+                } catch (IOException ignored) {
+                }
+                throw new IOException("downloaded FFmpeg failed `-version` smoke test at " + out
+                        + " (exec from " + toolRoot + " is not permitted on this device?)");
             }
             move(out, binary);
             makeExecutable(binary);
             downloadLicense(asset, dir.resolve("LICENSE"), log);
             Files.writeString(marker, "version=" + VERSION + "\nsha256=" + asset.sha256 + "\n");
+            Files.deleteIfExists(failed);
             log.accept("FFmpeg installed: " + binary);
             return binary;
         }
@@ -323,16 +343,28 @@ public final class FfmpegProvisioner {
         }
     }
 
-    private static boolean smokeTest(Path binary) {
+    private static boolean smokeTest(Path binary, Consumer<String> log) {
         try {
             Process process = new ProcessBuilder(binary.toString(), "-version")
                     .redirectErrorStream(true)
                     .start();
+            ByteArrayOutputStream head = new ByteArrayOutputStream();
             try (InputStream in = process.getInputStream()) {
-                in.transferTo(OutputStream.nullOutputStream());
+                byte[] buffer = new byte[8192];
+                int n;
+                while ((n = in.read(buffer)) >= 0) {
+                    if (head.size() < 4096) head.write(buffer, 0, Math.min(n, 4096 - head.size()));
+                    // Drain so FFmpeg cannot block on a full pipe.
+                }
             }
-            return process.waitFor(20, TimeUnit.SECONDS) && process.exitValue() == 0;
+            boolean ok = process.waitFor(20, TimeUnit.SECONDS) && process.exitValue() == 0;
+            if (!ok) {
+                log.accept("FFmpeg smoke test failed (exit=" + (process.isAlive() ? "timeout" : process.exitValue())
+                        + "): " + head.toString(java.nio.charset.StandardCharsets.UTF_8).trim());
+            }
+            return ok;
         } catch (Exception e) {
+            log.accept("FFmpeg smoke test could not start " + binary + ": " + e);
             return false;
         }
     }
@@ -350,6 +382,37 @@ public final class FfmpegProvisioner {
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException e) {
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static String firstLine(String text) {
+        int i = text.indexOf('\n');
+        return (i < 0 ? text : text.substring(0, i)).trim();
+    }
+
+    /**
+     * Older builds put the binary on /storage/emulated (noexec). Remove that
+     * stale copy once we know we can use the app-private directory instead.
+     */
+    private static void cleanupLegacy(Path gameDir, Path toolRoot, Consumer<String> log) {
+        try {
+            Path legacy = gameDir.resolve("config").resolve("fancyloading").resolve("tools")
+                    .toAbsolutePath().normalize();
+            Path current = toolRoot.toAbsolutePath().normalize();
+            if (legacy.equals(current) || !Files.isDirectory(legacy) || !legacy.startsWith(gameDir)) {
+                return;
+            }
+            try (var stream = Files.walk(legacy)) {
+                stream.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException ignored) {
+                    }
+                });
+            }
+            log.accept("FFmpeg removed stale sdcard tools: " + legacy);
+        } catch (Exception e) {
+            log.accept("FFmpeg stale-tools cleanup skipped: " + e);
         }
     }
 

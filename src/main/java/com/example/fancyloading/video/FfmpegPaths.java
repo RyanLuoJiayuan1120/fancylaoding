@@ -2,6 +2,7 @@ package com.example.fancyloading.video;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -20,13 +21,27 @@ public final class FfmpegPaths {
 
     public static boolean isAndroid() {
         if (android != null) return android;
+        android = detectAndroid();
+        return android;
+    }
+
+    /**
+     * FCL/Pojav run a normal Linux JVM, so android.app.ActivityThread is often
+     * not on the classpath at all. Fall back to paths that only Android uses:
+     * java.io.tmpdir is /data/user/<id>/<package>/cache/..., while gameDir is
+     * under /storage/emulated/<id>/... .
+     */
+    private static boolean detectAndroid() {
         try {
             Class.forName("android.app.ActivityThread");
-            android = true;
-        } catch (Throwable t) {
-            android = false;
+            return true;
+        } catch (Throwable ignored) {
         }
-        return android;
+        String tmp = System.getProperty("java.io.tmpdir", "");
+        if (tmp.matches("^/data/(user|data)/\\d+/[^/]+(/.*)?$")) return true;
+        String home = System.getProperty("user.home", "");
+        if (home.startsWith("/storage/emulated/") || home.startsWith("/sdcard/")) return true;
+        return false;
     }
 
     /**
@@ -49,9 +64,36 @@ public final class FfmpegPaths {
         return gameDir.resolve("config").resolve("fancyloading").resolve("tools");
     }
 
-    /** Application.getFilesDir() via reflection; null if FCL's runtime doesn't expose it. */
+    /**
+     * Application.getFilesDir() via reflection. If the Android classes are not
+     * visible (FCL), derive the app-private root from java.io.tmpdir
+     * (/data/user/11/com.tungsten.fcl/cache/fclauncher) and use its files/ dir.
+     */
     public static Path androidFilesDir() {
         if (cachedAndroidFiles != null) return cachedAndroidFiles;
+        String override = System.getProperty("fancyloading.androidFilesDir");
+        if (override != null && !override.isBlank()) {
+            cachedAndroidFiles = Path.of(override);
+            return cachedAndroidFiles;
+        }
+        Path fromApi = androidFilesDirViaApi();
+        if (fromApi != null) return fromApi;
+
+        String tmp = System.getProperty("java.io.tmpdir", "");
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("^(/data/(?:user|data)/\\d+/[^/]+)(?:/.*)?$").matcher(tmp);
+        if (m.matches()) {
+            Path root = Path.of(m.group(1));
+            if (Files.isDirectory(root) && Files.isWritable(root)) {
+                // files/ may not exist yet; FfmpegProvisioner calls createDirectories.
+                cachedAndroidFiles = root.resolve("files");
+                return cachedAndroidFiles;
+            }
+        }
+        return null;
+    }
+
+    private static Path androidFilesDirViaApi() {
         try {
             Class<?> activityThread = Class.forName("android.app.ActivityThread");
             Object app = null;

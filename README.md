@@ -149,16 +149,25 @@ config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 2. Android: `Context.getFilesDir()/fancyloading/tools`（应用私有目录）
 3. 桌面: `<gameDir>/config/fancyloading/tools`
 
-Android 路径通过反射 `android.app.ActivityThread.currentApplication().getFilesDir()` 获取，
-不写 sdcard。若 FCL 运行时拿不到 `Context`，可在 JVM 参数里显式指定：
+FCL/Pojav 里 JVM 是普通 Linux JVM，`android.app.ActivityThread` 往往不在
+classpath 上。因此先反射 `Context.getFilesDir()`；拿不到时从
+`java.io.tmpdir`（形如 `/data/user/11/com.tungsten.fcl/cache/fclauncher`）
+反推应用私有根目录，落到 `<app>/files/fancyloading/tools`，不再写 sdcard。
+
+也可显式指定（优先级最高）：
 
 ```text
 -Dfancyloading.ffmpegDir=/data/user/0/<FCL包名>/files/fancyloading/tools
+-Dfancyloading.androidFilesDir=/data/user/0/<FCL包名>/files
 ```
 
-仍然失败时，说明该 Android 环境不允许执行 app 私有目录（SELinux/`noexec`）或
-Linux 静态二进制与 Bionic 不兼容；此时会自动回退 PNG 帧序列。要彻底解决，
-需要改用 Android 原生 `.so` / MediaCodec 解码器。
+若私有目录仍不允许执行（SELinux/`noexec`），自检会失败并写入
+`.failed` 标记，之后启动直接回退 PNG 帧序列，不会反复下载 25 MB。
+确认环境修复后可用 `-Dfancyloading.ffmpegRetry=1` 清除标记重试。
+旧版留在 sdcard 的 `config/fancyloading/tools` 会被自动清理。
+
+仍然失败时，说明该 Android 环境不允许执行 app 私有目录，或 Linux 静态
+二进制与 Bionic 不兼容；彻底方案是改用 Android 原生 `.so` / MediaCodec 解码器。
 
 ## 目录结构
 
