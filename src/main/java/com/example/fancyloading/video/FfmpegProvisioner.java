@@ -142,14 +142,18 @@ public final class FfmpegProvisioner {
             Files.deleteIfExists(marker);
 
             download(asset, gz, log);
+            log.accept("FFmpeg verifying SHA-256...");
             String actual = sha256(gz);
             if (!actual.equalsIgnoreCase(asset.sha256)) {
                 Files.deleteIfExists(gz);
                 throw new IOException("FFmpeg SHA-256 mismatch: " + actual);
             }
+            log.accept("FFmpeg extracting to " + out + " ...");
             gunzip(gz, out);
             Files.deleteIfExists(gz);
             makeExecutable(out);
+            long size = Files.size(out);
+            log.accept("FFmpeg extracted " + size + " bytes, running -version smoke test...");
             if (!smokeTest(out, log)) {
                 Files.deleteIfExists(out);
                 try {
@@ -348,27 +352,39 @@ public final class FfmpegProvisioner {
     }
 
     private static boolean smokeTest(Path binary, Consumer<String> log) {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder(binary.toString(), "-version")
+            process = new ProcessBuilder(binary.toString(), "-version")
                     .redirectErrorStream(true)
                     .start();
+            // Wait with a hard timeout; reading stdout to EOF first would block
+            // forever if a binary hangs without closing its pipes.
+            boolean finished = process.waitFor(20, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                process.waitFor(2, TimeUnit.SECONDS);
+            }
             ByteArrayOutputStream head = new ByteArrayOutputStream();
             try (InputStream in = process.getInputStream()) {
                 byte[] buffer = new byte[8192];
                 int n;
                 while ((n = in.read(buffer)) >= 0) {
                     if (head.size() < 4096) head.write(buffer, 0, Math.min(n, 4096 - head.size()));
-                    // Drain so FFmpeg cannot block on a full pipe.
                 }
             }
-            boolean ok = process.waitFor(20, TimeUnit.SECONDS) && process.exitValue() == 0;
+            String out = head.toString(java.nio.charset.StandardCharsets.UTF_8);
+            if (!finished) {
+                log.accept("FFmpeg smoke test timed out after 20s: " + out.trim());
+                return false;
+            }
+            boolean ok = process.exitValue() == 0;
             if (!ok) {
-                log.accept("FFmpeg smoke test failed (exit=" + (process.isAlive() ? "timeout" : process.exitValue())
-                        + "): " + head.toString(java.nio.charset.StandardCharsets.UTF_8).trim());
+                log.accept("FFmpeg smoke test failed (exit=" + process.exitValue() + "): " + out.trim());
             }
             return ok;
         } catch (Exception e) {
             log.accept("FFmpeg smoke test could not start " + binary + ": " + e);
+            if (process != null) process.destroyForcibly();
             return false;
         }
     }
