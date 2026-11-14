@@ -1,10 +1,18 @@
 package com.example.videoloading.early;
 
+import com.example.fancyloading.video.FfmpegProvisioner;
+import com.example.fancyloading.video.FfmpegVideoSource;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryStack;
 
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import javax.imageio.ImageIO;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +32,9 @@ public final class EarlyWindow {
     private static final CountDownLatch released = new CountDownLatch(1);
     private static long aStartNanos;
     private static long lastLogNanos;
+    private static volatile FfmpegVideoSource videoSource;
+    private static volatile boolean videoStarted;
+    private static boolean backgroundSaved;
 
     public static boolean hasHandle() { return handle != 0L && VLConfig.adoptWindow; }
     public static long getHandle() { return handle; }
@@ -56,7 +67,8 @@ public final class EarlyWindow {
             GLFW.glfwMakeContextCurrent(handle);
             GL.createCapabilities();          // main thread first (macOS)
             EarlyRenderer.init();             // GL objects built on the main thread
-            FrameSequence.start();            // background image upload happens here too
+            FrameSequence.start();            // PNG fallback + still image
+            startVideoAsync();                // optional MP4 via provisioned FFmpeg
 
             // Release before the render thread takes over — two threads must never
             // hold the same context at once.
@@ -107,7 +119,19 @@ public final class EarlyWindow {
         long last = System.nanoTime();
         try {
             while (running) {
-                FrameSequence.pump();
+                FfmpegVideoSource video = videoSource;
+                if (video != null && video.hasFirstFrame()) {
+                    ByteBuffer frame = video.takeFrame();
+                    if (frame != null) {
+                        if (!backgroundSaved) {
+                            backgroundSaved = true;
+                            saveBackground(frame, video.width(), video.height());
+                        }
+                        EarlyRenderer.upload(EarlyRenderer.TEX_FRAME, frame, video.width(), video.height());
+                    }
+                } else {
+                    FrameSequence.pump();
+                }
 
                 // MixinProbe is best-effort. On this loader it can be unavailable,
                 // which used to leave the bar frozen at 0 forever. Use a time-based
@@ -151,6 +175,7 @@ public final class EarlyWindow {
         } finally {
             try {
                 FrameSequence.stop();
+                stopVideo();
                 GLFW.glfwMakeContextCurrent(0L);   // rule 2
             } catch (Throwable ignored) {
             }
@@ -190,6 +215,74 @@ public final class EarlyWindow {
         }
     }
 
+    /** Save the first decoded frame as B's static background, atomically. */
+    private static void saveBackground(ByteBuffer frame, int width, int height) {
+        try {
+            BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+            ByteBuffer copy = frame.duplicate();
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int r = copy.get() & 0xFF;
+                    int g = copy.get() & 0xFF;
+                    int b = copy.get() & 0xFF;
+                    int a = copy.get() & 0xFF;
+                    image.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+                }
+            }
+            Path target = VLConfig.resolve(VLConfig.background);
+            Files.createDirectories(target.getParent());
+            Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+            ImageIO.write(image, "png", tmp.toFile());
+            try {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception e) {
+                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            System.out.println("[videoloading] B background generated from first frame: " + target);
+            LoadingLog.push("B background generated from video");
+        } catch (Throwable t) {
+            System.out.println("[videoloading] B background generation failed: " + t);
+        }
+    }
+
+    private static void startVideoAsync() {
+        if (videoStarted) return;
+        videoStarted = true;
+        Path videoPath = VLConfig.resolve(VLConfig.videoPath);
+        if (!Files.isRegularFile(videoPath)) {
+            System.out.println("[videoloading] video not found, using frames: " + videoPath);
+            return;
+        }
+        System.out.println("[videoloading] video configured: " + videoPath);
+        FfmpegProvisioner.ensureAsync(VLConfig.gameDir(), msg -> {
+            System.out.println("[videoloading] " + msg);
+            LoadingLog.push(msg);
+        }).thenAccept(ffmpeg -> {
+            try {
+                FfmpegVideoSource source = FfmpegVideoSource.start(
+                        ffmpeg, videoPath, VLConfig.videoWidth, VLConfig.videoHeight, VLConfig.videoFps);
+                videoSource = source;
+                System.out.println("[videoloading] FFmpeg video started: "
+                        + VLConfig.videoWidth + "x" + VLConfig.videoHeight + "@" + VLConfig.videoFps);
+                LoadingLog.push("Video decoding started");
+            } catch (Throwable t) {
+                System.out.println("[videoloading] FFmpeg video failed: " + t);
+            }
+        }).exceptionally(t -> {
+            System.out.println("[videoloading] FFmpeg unavailable, keeping frames: " + t);
+            return null;
+        });
+    }
+
+    private static void stopVideo() {
+        FfmpegVideoSource source = videoSource;
+        videoSource = null;
+        if (source != null) {
+            source.close();
+        }
+    }
+
     /**
      * MAIN THREAD, called from WindowMixin in place of glfwCreateWindow.
      * Waits for the render thread to release the context, optionally holds until the
@@ -201,9 +294,10 @@ public final class EarlyWindow {
 
         int[] fb = getFramebufferSize(h);
         int[] win = getWindowSize(h);
+        boolean videoReady = videoSource != null && videoSource.hasFirstFrame();
         System.out.println("[videoloading] handoff begin fb=" + fb[0] + "x" + fb[1]
                 + " win=" + win[0] + "x" + win[1]
-                + " played=" + FrameSequence.hasPlayedOnce());
+                + " played=" + FrameSequence.hasPlayedOnce() + " video=" + videoReady);
         handle = 0L;
         running = false;
         try {
@@ -216,7 +310,8 @@ public final class EarlyWindow {
 
         long waitStart = System.nanoTime();
         long deadline = waitStart + Math.max(0L, maxHoldMs) * 1_000_000L;
-        while (System.nanoTime() < deadline && !FrameSequence.hasPlayedOnce() && VLConfig.enabled) {
+        while (!videoReady && System.nanoTime() < deadline
+                && !FrameSequence.hasPlayedOnce() && VLConfig.enabled) {
             GLFW.glfwPollEvents();
             try { Thread.sleep(8); } catch (InterruptedException e) { break; }
         }

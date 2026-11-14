@@ -31,6 +31,14 @@ tasks.withType(JavaCompile).configureEach {
 	it.options.release = 21
 }
 
+sourceSets {
+	main {
+		java {
+			srcDir "../common-video/src/main/java"
+		}
+	}
+}
+
 java {
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21

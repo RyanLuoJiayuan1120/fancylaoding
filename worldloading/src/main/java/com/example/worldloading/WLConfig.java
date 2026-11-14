@@ -28,6 +28,7 @@ public final class WLConfig {
     public static int barBgColor = 0xAA000000;
 
     public static boolean videoEnabled = true;
+    public static String videoPath = "config/worldloading/video.mp4";
     public static int videoFps = 15;
     public static int videoFrames = 75;
     public static int videoWidth = 480;
@@ -62,6 +63,7 @@ public final class WLConfig {
         barBgColor = color(p, "barBgColor", barBgColor);
 
         videoEnabled = bool(p, "videoEnabled", videoEnabled);
+        videoPath = p.getProperty("videoPath", videoPath);
         videoFps = Math.max(1, integer(p, "videoFps", videoFps));
         videoFrames = Math.max(1, integer(p, "videoFrames", videoFrames));
         videoWidth = Math.max(1, integer(p, "videoWidth", videoWidth));

@@ -12,7 +12,7 @@ Fabric 1.21.11 客户端加载界面合集，包含两个可独立安装的 mod�
 
 ## 特性
 
-- **A 段早期窗口**：Mixin 引导阶段就显示视频帧、进度条和最新游戏日志。
+- **A 段早期窗口**：Mixin 引导阶段直接播放 MP4（自动安装 FFmpeg），或回退帧序列；同时显示进度条和最新游戏日志。
 - **单窗口交接**：同一个 GLFW 句柄 / GL 上下文交给 Minecraft，不闪第二个窗口。
 - **B 段不卡死**：保留原版 `LoadingOverlay` 的 `onFinish`，只在 `TAIL` 覆盖绘制。
 - **B 段静态帧**：不再渲染视频，用 `background.png` 作为背景，避免资源重载期做视频纹理。
@@ -21,7 +21,8 @@ Fabric 1.21.11 客户端加载界面合集，包含两个可独立安装的 mod�
 - **统一进度条**：以 A 段为基准，三条都是全宽、`0.84h`、6 物理像素高、
   深色底 + 白色填充、文字左对齐 `3%`。
 - **LXGW WenKai Lite**：v2 百分比和 v1 日志行共用同一外部 TTF；字体不进 jar。
-- **worldloading 内置视频帧**：75 张 480×270 PNG，15 fps，COVER 缩放。
+- **MP4 直读**：首次使用自动从 GitHub 下载对应平台 FFmpeg，校验 SHA-256 后解压到 `config/fancyloading/tools/`；失败回退 PNG 序列。
+- **worldloading 内置视频帧**：75 张 480×270 PNG，15 fps，COVER 缩放；没有 MP4 时使用。
 
 ## 环境
 
@@ -71,8 +72,9 @@ config/worldloading/fonts/LXGWWenKaiLite-Regular.ttf
 
 ```text
 config/videoloading.properties
-config/videoloading/frames/frame_000.png ...   # 帧序列，按文件名排序
-config/videoloading/background.png             # B 段静态帧，从视频任意截一帧
+config/videoloading/video.mp4                  # 可选，优先使用
+config/videoloading/frames/frame_000.png ...   # 没有 MP4 时的回退帧序列
+config/videoloading/background.png             # A 段第一帧自动生成，无需手放
 ```
 
 `worldloading` 需要的视频帧已打进 jar，只需要字体。
@@ -81,6 +83,20 @@ config/videoloading/background.png             # B 段静态帧，从视频任�
 
 - [`videoloading/README.md`](videoloading/README.md)
 - [`worldloading/README.md`](worldloading/README.md)
+
+## FFmpeg 自举
+
+两个 mod 共用 `common-video`：
+
+- 首次需要 MP4 时，按 `os.name` / `os.arch` 选择平台
+- 依次尝试 `gh-proxy.com`、`ghfast.top`、`ghproxy.net`，最后回退 GitHub 直连
+- 下载固定版本 `eugeneware/ffmpeg-static` `b6.1.1`，校验 SHA-256
+- 解压到 `config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg`
+- `ffmpeg -version` 自检通过后才启用；失败或离线时回退 PNG 序列
+- 不要求用户安装 FFmpeg
+
+支持平台：`windows-x64`、`linux-x64`、`linux-arm64`、`macos-arm64`、`macos-x64`。
+FFmpeg 构建为 GPLv3，下载目录内会保留其 `LICENSE`。
 
 ## 目录结构
 
@@ -92,6 +108,7 @@ fancylaoding/
 ├── worldloading/          # LevelLoadingScreen 世界加载条
 │   ├── src/main/java/...
 │   └── src/main/resources/assets/worldloading/textures/loading/
+├── common-video/          # FFmpeg 下载/解压 + 原始帧解码（两个 mod 共用）
 ├── config.example/
 ├── gradle/wrapper/
 ├── gradlew
@@ -113,6 +130,9 @@ fancylaoding/
 - `MixinProbe` 在该 Fabric Loader 上可能计数为 0，A 段进度会走时间保底。
 - B 段日志行使用 `DynamicTexture`；若个别环境看不到该行，A 段日志和进度条仍正常。
 - 视频帧/字体体积较大，仓库不提交构建产物和字体文件；按上面的资源路径自行放置。
+- 两个 mod 同时安装时，共享 `common-video` 类会触发 Fabric duplicate class 警告；
+  两份字节码一致，当前不影响功能。
+- 首次播放 MP4 需要联网下载 FFmpeg；离线环境可预置 `config/fancyloading/tools/`。
 
 ## License
 

@@ -4,7 +4,7 @@
 
 - 去掉原版彩色 chunk 网格和原版进度条
 - 全宽进度条（`0.84h`，6 物理像素高）
-- 视频帧背景（75 张 480x270 PNG，15fps，随 jar 分发）
+- MP4 视频背景（自动安装 FFmpeg）；没有 MP4 时回退 75 张 480x270 PNG（随 jar 分发）
 - 左下角行楷百分比文字（LXGW WenKai Lite，外部字体）
 - 进度单调递增，不因重试/回退跳变
 
@@ -52,6 +52,7 @@ videoFrames=75
 videoWidth=480
 videoHeight=270
 videoDim=0.18
+videoPath=config/worldloading/video.mp4
 ```
 
 - `barHeight` 是**物理像素**；`BarRenderer` 会除以 GUI scale，和 A 段基准一致。
@@ -60,17 +61,19 @@ videoDim=0.18
 
 ## 视频背景
 
-jar 内已包含：
+优先使用 `videoPath` 的 MP4，由共享的 FFmpeg 自举器按平台下载/校验/解压：
 
 ```text
-assets/worldloading/textures/loading/frame_000.png ... frame_074.png
+config/worldloading/video.mp4
+config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 ```
 
-- 480x270，15fps，循环播放
-- COVER 缩放，每帧从 `guiWidth/guiHeight` 重算，不缓存尺寸
+- 下载逻辑与 `videoloading` 相同：GitHub release + 加速站 + SHA-256 + 自检
+- 下载失败/没有 MP4 时，回退 jar 内的 `frame_000.png ... frame_074.png`
+- COVER 缩放每帧重算，不缓存 drawable 尺寸
 - `videoDim` 是叠加的黑色透明度（0–0.9）
 
-换视频：重新导出 75 张同名帧，或在配置里改 `videoFrames` 并替换资源。
+换视频：改 `videoPath`，或重新导出 75 张同名帧替换资源。
 
 ## 构建
 
@@ -96,7 +99,7 @@ src/main/java/com/example/worldloading/
 ├── WorldProgress.java       # 单调进度 + 估算
 ├── BarRenderer.java         # 全宽条 + 文字入口
 ├── XingkaiFont.java         # AWT -> DynamicTexture；LXGW 字体
-├── VideoBackground.java     # 75 帧 PNG 视频背景
+├── VideoBackground.java     # MP4（FFmpeg）或 75 帧 PNG 背景
 ├── WorldLoadingClient.java  # client entrypoint
 └── mixin/LevelLoadingScreenMixin.java
 ```
@@ -114,7 +117,10 @@ Mixin 关键：
   `ArrayList cannot be cast to AnnotationNode`）；这里用 `@Inject`。
 - 1.21.11 没有 `ReceivingLevelScreen` / `GenericDirtMessageScreen` /
   `StoringChunkProgressListener`；只针对 `LevelLoadingScreen`。
+- 首次使用 MP4 需要联网下载 FFmpeg；离线环境请预置 `config/fancyloading/tools/`。
 - 字体为外部文件；不进 jar。
+- 与 `videoloading` 同时安装时，共享 video 类会触发 Fabric duplicate class 警告；
+  两份字节码一致，当前不影响功能。
 
 ## License
 
