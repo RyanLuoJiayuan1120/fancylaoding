@@ -260,7 +260,10 @@ public final class JCodecVideoSource implements VideoSource {
                 convertRowExact(yPlane, uPlane, vPlane, yStride, cStride, ox, oy, limited, y, out);
             }
         }
-        return ByteBuffer.wrap(out);
+        ByteBuffer direct = ByteBuffer.allocateDirect(out.length);
+        direct.put(out);
+        direct.flip();
+        return direct;
     }
 
     private void convertRowExact(byte[] yPlane, byte[] uPlane, byte[] vPlane,
