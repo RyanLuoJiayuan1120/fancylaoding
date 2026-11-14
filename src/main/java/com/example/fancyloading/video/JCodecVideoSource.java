@@ -107,8 +107,10 @@ public final class JCodecVideoSource implements VideoSource {
         } catch (InterruptedException ignored) {
             // close()
         } catch (Throwable t) {
-            error = t.toString();
-            if (log != null) log.accept("JCodec video stopped: " + t);
+            if (running) {
+                error = t.toString();
+                if (log != null) log.accept("JCodec video stopped: " + t);
+            }
         } finally {
             running = false;
             closeChannel();
@@ -195,6 +197,10 @@ public final class JCodecVideoSource implements VideoSource {
             cy1[y] = Math.min(cHeight - 1, ciy + 1);
         }
 
+        if (srcW == width && srcH == height) {
+            return convertExact(yPlane, uPlane, vPlane, yStride, cStride, ox, oy, limited);
+        }
+
         ByteBuffer out = ByteBuffer.allocateDirect(width * height * 4);
         for (int y = 0; y < height; y++) {
             double sy = clampCoord(sy0 + (y + 0.5) / scale, srcH);
@@ -238,6 +244,43 @@ public final class JCodecVideoSource implements VideoSource {
         }
         out.flip();
         return out;
+    }
+
+    /** No scaling: integer sampling is several times faster than bilinear. */
+    private ByteBuffer convertExact(byte[] yPlane, byte[] uPlane, byte[] vPlane,
+                                    int yStride, int cStride, int ox, int oy, boolean limited) {
+        byte[] out = new byte[width * height * 4];
+        if (width * height >= 1_000_000 && Runtime.getRuntime().availableProcessors() > 1) {
+            final boolean lim = limited;
+            java.util.stream.IntStream.range(0, height).parallel()
+                    .forEach(y -> convertRowExact(yPlane, uPlane, vPlane, yStride, cStride,
+                            ox, oy, lim, y, out));
+        } else {
+            for (int y = 0; y < height; y++) {
+                convertRowExact(yPlane, uPlane, vPlane, yStride, cStride, ox, oy, limited, y, out);
+            }
+        }
+        return ByteBuffer.wrap(out);
+    }
+
+    private void convertRowExact(byte[] yPlane, byte[] uPlane, byte[] vPlane,
+                                 int yStride, int cStride, int ox, int oy,
+                                 boolean limited, int y, byte[] out) {
+        int yRow = (oy + y) * yStride + ox;
+        int cRow = ((oy + y) >> 1) * cStride + (ox >> 1);
+        int p = y * width * 4;
+        for (int x = 0; x < width; x++) {
+            int yy = (yPlane[yRow + x] + 128) & 0xff;
+            int uu = (uPlane[cRow + (x >> 1)] + 128) & 0xff;
+            int vv = (vPlane[cRow + (x >> 1)] + 128) & 0xff;
+            int yScaled = limited ? Y_LUT[yy] : yy << 8;
+            int u = limited ? C_LUT[uu] : uu - 128;
+            int v = limited ? C_LUT[vv] : vv - 128;
+            out[p++] = (byte) clamp((yScaled + 403 * v) >> 8, 0, 255);
+            out[p++] = (byte) clamp((yScaled - 48 * u - 120 * v) >> 8, 0, 255);
+            out[p++] = (byte) clamp((yScaled + 475 * u) >> 8, 0, 255);
+            out[p++] = (byte) 255;
+        }
     }
 
     /** JCodec plane bytes are {@code value - 128}; bilinear in that signed domain. */

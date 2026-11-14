@@ -85,8 +85,8 @@ windowWidth=854
 windowHeight=480
 
 videoPath=config/videoloading/video.mp4
-videoWidth=960
-videoHeight=540
+videoWidth=1280
+videoHeight=720
 videoFps=15
 
 framesDir=config/videoloading/frames
@@ -116,8 +116,8 @@ fontSize=14
 fontPath=config/worldloading/fonts/LXGWWenKaiLite-Regular.ttf
 
 videoPath=config/worldloading/video.mp4
-videoWidth=960
-videoHeight=540
+videoWidth=1280
+videoHeight=720
 videoFps=15
 videoDim=0.18
 ```
@@ -150,7 +150,12 @@ config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 因此 **Android 不再尝试 FFmpeg**，直接走纯 Java 的
 [JCodec](https://github.com/jcodec/jcodec)（BSD-2-Clause，已 shade 进 jar）。
 JCodec 不需要执行权限，代价是软件解码：4K 很慢，所以整合包额外提供
-`video-mobile.mp4`（960×540 / 15fps）；Android 会优先读它。
+两档手机视频，Android 会优先读它们：
+
+- `video-mobile.mp4`：1280×720 / 15fps，默认，较流畅
+- `video-mobile-hd.mp4`：1920×1080 / 15fps，更清晰，但软解帧率约减半
+
+在配置里设 `videoQuality=sd|hd` 切换；`sd` 默认。
 
 下面这段是桌面 FFmpeg 的工具目录逻辑，保留给桌面/其他平台使用：
 
@@ -189,9 +194,11 @@ user id 和包名都**不是写死的**。FCL/Pojav 里 JVM 是普通 Linux JVM�
 
 ### Android 视频性能
 
-- 优先 `video-mobile.mp4`（同目录，960×540/15fps），JCodec 在中端 arm64
-  上大约 4–10fps，加载界面够用。
-- 如果没有 mobile 文件，会退回解码 `video.mp4`；4K 源会非常慢，仅保证能出画面。
+- 优先 `video-mobile.mp4`（1280×720/15fps），JCodec 在本机 x64 上约
+  11–12fps；中端 arm64 预计 4–7fps，加载界面够用。
+- `videoQuality=hd` + `video-mobile-hd.mp4`（1920×1080）更清晰，但 x64
+  约 5fps，arm64 预计 2–3fps；要清晰度就选它。
+- 没有 mobile 文件时会退回解码 `video.mp4`；4K 源会非常慢，仅保证能出画面。
 - 帧序列始终保留，JCodec 失败/文件缺失时自动使用。
 
 ## 目录结构

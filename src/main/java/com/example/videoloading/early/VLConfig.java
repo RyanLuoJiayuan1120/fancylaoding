@@ -26,6 +26,8 @@ public final class VLConfig {
     public static volatile int     videoWidth   = 960;
     public static volatile int     videoHeight  = 540;
     public static volatile int     videoFps     = 15;
+    /** sd = video-mobile.mp4 (1280x720), hd = video-mobile-hd.mp4 (1920x1080). */
+    public static volatile String  videoQuality = "sd";
     public static volatile int     fps          = 24;
     public static volatile long    maxHoldMs    = 3000;   // upper bound on "wait for the video to end"
     public static volatile float   mixinShare   = 0.8f;   // mixin 0..80, resources 80..100
@@ -66,6 +68,7 @@ public final class VLConfig {
         videoWidth   = Math.max(2, intg(p, "videoWidth", videoWidth));
         videoHeight  = Math.max(2, intg(p, "videoHeight", videoHeight));
         videoFps     = Math.max(1, intg(p, "videoFps", videoFps));
+        videoQuality = p.getProperty("videoQuality", videoQuality).trim().toLowerCase();
         fps          = intg(p, "fps", fps);
         maxHoldMs    = intg(p, "maxHoldMs", (int) maxHoldMs);
         mixinShare   = flt(p, "mixinShare", mixinShare);

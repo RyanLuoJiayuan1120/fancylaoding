@@ -258,7 +258,7 @@ public final class EarlyWindow {
         try {
             VideoSources.startAsync(videoPath,
                     VLConfig.videoWidth, VLConfig.videoHeight, VLConfig.videoFps,
-                    VLConfig.gameDir(),
+                    VLConfig.videoQuality, VLConfig.gameDir(),
                     msg -> {
                         System.out.println("[videoloading] " + msg);
                         LoadingLog.push(msg);

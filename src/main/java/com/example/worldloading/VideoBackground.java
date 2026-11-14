@@ -58,7 +58,7 @@ public final class VideoBackground {
         try {
             VideoSources.startAsync(video,
                     WLConfig.videoWidth, WLConfig.videoHeight, WLConfig.videoFps,
-                    FabricLoader.getInstance().getGameDir(),
+                    WLConfig.videoQuality, FabricLoader.getInstance().getGameDir(),
                     msg -> WorldLoadingClient.LOGGER.info("worldloading: {}", msg),
                     source -> {
                         videoSource = source;

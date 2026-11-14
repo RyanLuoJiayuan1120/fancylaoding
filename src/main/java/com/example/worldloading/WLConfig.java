@@ -33,6 +33,8 @@ public final class WLConfig {
     public static int videoFrames = 75;
     public static int videoWidth = 480;
     public static int videoHeight = 270;
+    /** sd = video-mobile.mp4 (1280x720), hd = video-mobile-hd.mp4 (1920x1080). */
+    public static String videoQuality = "sd";
     public static float videoDim = 0.18f;
 
     private WLConfig() {
@@ -68,6 +70,7 @@ public final class WLConfig {
         videoFrames = Math.max(1, integer(p, "videoFrames", videoFrames));
         videoWidth = Math.max(1, integer(p, "videoWidth", videoWidth));
         videoHeight = Math.max(1, integer(p, "videoHeight", videoHeight));
+        videoQuality = p.getProperty("videoQuality", videoQuality).trim().toLowerCase();
         videoDim = clamp((float) dbl(p, "videoDim", videoDim), 0.0f, 0.9f);
 
         if (!Files.exists(path)) {

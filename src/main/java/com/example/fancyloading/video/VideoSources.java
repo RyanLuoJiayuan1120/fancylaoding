@@ -20,15 +20,26 @@ public final class VideoSources {
     }
 
     /** Prefer {@code video-mobile.mp4} next to a 4K {@code video.mp4}. */
-    public static Path mobileVariant(Path video) {
+    public static Path mobileVariant(Path video, String quality) {
         Path parent = video.getParent();
         if (parent == null) return video;
         String name = video.getFileName().toString();
         int dot = name.lastIndexOf('.');
-        String mobileName = (dot > 0 ? name.substring(0, dot) : name)
-                + "-mobile" + (dot > 0 ? name.substring(dot) : ".mp4");
-        Path mobile = parent.resolve(mobileName);
-        return Files.isRegularFile(mobile) ? mobile : video;
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        String ext = dot > 0 ? name.substring(dot) : ".mp4";
+        if ("hd".equalsIgnoreCase(quality)) {
+            Path hd = parent.resolve(stem + "-mobile-hd" + ext);
+            if (Files.isRegularFile(hd)) return hd;
+        }
+        Path sd = parent.resolve(stem + "-mobile" + ext);
+        return Files.isRegularFile(sd) ? sd : video;
+    }
+
+    private static int[] decoderSize(Path source, int width, int height) {
+        String name = source.getFileName().toString();
+        if (name.endsWith("-mobile-hd.mp4")) return new int[]{1920, 1080};
+        if (name.endsWith("-mobile.mp4")) return new int[]{1280, 720};
+        return new int[]{width, height};
     }
 
     /**
@@ -36,12 +47,14 @@ public final class VideoSources {
      * The sink may be called from any thread; keep the field volatile.
      */
     public static void startAsync(Path video, int width, int height, int fps,
-                                  Path gameDir, Consumer<String> log,
+                                  String quality, Path gameDir, Consumer<String> log,
                                   Consumer<VideoSource> sink) {
-        Path sourceFile = mobileVariant(video);
+        Path sourceFile = mobileVariant(video, quality);
         if (FfmpegPaths.isAndroid()) {
-            log.accept("Android: using JCodec, source=" + sourceFile);
-            sink.accept(JCodecVideoSource.start(sourceFile, width, height, fps, log));
+            int[] size = decoderSize(sourceFile, width, height);
+            log.accept("Android: using JCodec " + size[0] + "x" + size[1]
+                    + ", source=" + sourceFile);
+            sink.accept(JCodecVideoSource.start(sourceFile, size[0], size[1], fps, log));
             return;
         }
 
@@ -55,8 +68,9 @@ public final class VideoSources {
         }).exceptionally(t -> {
             log.accept("FFmpeg unavailable, trying JCodec: " + t);
             try {
-                sink.accept(JCodecVideoSource.start(sourceFile, width, height, fps, log));
-                log.accept("JCodec video started: " + width + "x" + height + "@" + fps
+                int[] size = decoderSize(sourceFile, width, height);
+                sink.accept(JCodecVideoSource.start(sourceFile, size[0], size[1], fps, log));
+                log.accept("JCodec video started: " + size[0] + "x" + size[1] + "@" + fps
                         + " source=" + sourceFile);
             } catch (Throwable jt) {
                 log.accept("JCodec video failed: " + jt);
