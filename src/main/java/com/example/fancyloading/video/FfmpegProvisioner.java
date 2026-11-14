@@ -106,7 +106,7 @@ public final class FfmpegProvisioner {
                 throw new IOException("no FFmpeg asset for " + key);
             }
 
-            Path dir = gameDir.resolve("config").resolve("fancyloading").resolve("tools")
+            Path dir = FfmpegPaths.toolRoot(gameDir)
                     .resolve("ffmpeg-" + VERSION + "-" + key);
             Path binary = dir.resolve(key.startsWith("win") ? "ffmpeg.exe" : "ffmpeg");
             Path marker = dir.resolve(".installed");
@@ -118,6 +118,7 @@ public final class FfmpegProvisioner {
             }
 
             Files.createDirectories(dir);
+            log.accept("FFmpeg tool dir: " + dir + (FfmpegPaths.isAndroid() ? " (Android private files)" : ""));
             Path gz = dir.resolve(asset.file + ".part");
             Path out = dir.resolve(binary.getFileName() + ".part");
             Files.deleteIfExists(gz);

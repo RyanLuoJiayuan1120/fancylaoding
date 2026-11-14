@@ -138,6 +138,28 @@ config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 - 用户不需要自己安装 FFmpeg
 - FFmpeg 构建为 GPLv3，下载目录内保留其 `LICENSE`
 
+## Android / FCL
+
+早期 GLFW 窗口在 FCL 上已验证可用。FFmpeg 的问题不是平台识别，而是 **sdcard 通常 noexec**：
+即使 `chmod +x`，从 `/sdcard/...` 也执行不了。
+
+现在工具目录改为：
+
+1. `-Dfancyloading.ffmpegDir=...` 强制指定
+2. Android: `Context.getFilesDir()/fancyloading/tools`（应用私有目录）
+3. 桌面: `<gameDir>/config/fancyloading/tools`
+
+Android 路径通过反射 `android.app.ActivityThread.currentApplication().getFilesDir()` 获取，
+不写 sdcard。若 FCL 运行时拿不到 `Context`，可在 JVM 参数里显式指定：
+
+```text
+-Dfancyloading.ffmpegDir=/data/user/0/<FCL包名>/files/fancyloading/tools
+```
+
+仍然失败时，说明该 Android 环境不允许执行 app 私有目录（SELinux/`noexec`）或
+Linux 静态二进制与 Bionic 不兼容；此时会自动回退 PNG 帧序列。要彻底解决，
+需要改用 Android 原生 `.so` / MediaCodec 解码器。
+
 ## 目录结构
 
 ```text
