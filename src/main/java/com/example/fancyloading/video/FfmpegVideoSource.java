@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
  * <p>All decoding happens off-thread. Only the latest frame is kept; slow
  * renderers drop frames instead of building a queue.</p>
  */
-public final class FfmpegVideoSource implements AutoCloseable {
+public final class FfmpegVideoSource implements VideoSource {
 
     private final Process process;
     private final int width;

@@ -14,12 +14,30 @@ repositories {
     maven { name = 'Fabric'; url = 'https://maven.fabricmc.net/' }
 }
 
+configurations {
+    embed
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.officialMojangMappings()
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     // Bundled by Fabric Loader at runtime; needed to compile @WrapOperation.
     compileOnly "io.github.llamalad7:mixinextras-fabric:0.5.0"
+    // Pure-Java H.264 decoder for Android, shaded into the mod jar.
+    compileOnly files('libs/jcodec-0.2.5.jar')
+    embed files('libs/jcodec-0.2.5.jar')
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from({ configurations.embed.collect { zipTree(it) } }) {
+        exclude 'META-INF/MANIFEST.MF', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+    }
+    from('libs/JCODEC_LICENSE.txt') {
+        into 'META-INF'
+        rename { 'JCODEC_LICENSE.txt' }
+    }
 }
 
 processResources {

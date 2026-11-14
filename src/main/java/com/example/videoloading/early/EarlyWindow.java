@@ -1,7 +1,7 @@
 package com.example.videoloading.early;
 
-import com.example.fancyloading.video.FfmpegProvisioner;
-import com.example.fancyloading.video.FfmpegVideoSource;
+import com.example.fancyloading.video.VideoSource;
+import com.example.fancyloading.video.VideoSources;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.system.MemoryStack;
@@ -32,7 +32,7 @@ public final class EarlyWindow {
     private static final CountDownLatch released = new CountDownLatch(1);
     private static long aStartNanos;
     private static long lastLogNanos;
-    private static volatile FfmpegVideoSource videoSource;
+    private static volatile VideoSource videoSource;
     private static volatile boolean videoStarted;
     private static boolean backgroundSaved;
 
@@ -119,7 +119,7 @@ public final class EarlyWindow {
         long last = System.nanoTime();
         try {
             while (running) {
-                FfmpegVideoSource video = videoSource;
+                VideoSource video = videoSource;
                 if (video != null && video.hasFirstFrame()) {
                     ByteBuffer frame = video.takeFrame();
                     if (frame != null) {
@@ -255,28 +255,26 @@ public final class EarlyWindow {
             return;
         }
         System.out.println("[videoloading] video configured: " + videoPath);
-        FfmpegProvisioner.ensureAsync(VLConfig.gameDir(), msg -> {
-            System.out.println("[videoloading] " + msg);
-            LoadingLog.push(msg);
-        }).thenAccept(ffmpeg -> {
-            try {
-                FfmpegVideoSource source = FfmpegVideoSource.start(
-                        ffmpeg, videoPath, VLConfig.videoWidth, VLConfig.videoHeight, VLConfig.videoFps);
-                videoSource = source;
-                System.out.println("[videoloading] FFmpeg video started: "
-                        + VLConfig.videoWidth + "x" + VLConfig.videoHeight + "@" + VLConfig.videoFps);
-                LoadingLog.push("Video decoding started");
-            } catch (Throwable t) {
-                System.out.println("[videoloading] FFmpeg video failed: " + t);
-            }
-        }).exceptionally(t -> {
-            System.out.println("[videoloading] FFmpeg unavailable, keeping frames: " + t);
-            return null;
-        });
+        try {
+            VideoSources.startAsync(videoPath,
+                    VLConfig.videoWidth, VLConfig.videoHeight, VLConfig.videoFps,
+                    VLConfig.gameDir(),
+                    msg -> {
+                        System.out.println("[videoloading] " + msg);
+                        LoadingLog.push(msg);
+                    },
+                    source -> {
+                        videoSource = source;
+                        System.out.println("[videoloading] video source started: " + source.getClass().getSimpleName());
+                        LoadingLog.push("Video decoding started");
+                    });
+        } catch (Throwable t) {
+            System.out.println("[videoloading] video source failed, keeping frames: " + t);
+        }
     }
 
     private static void stopVideo() {
-        FfmpegVideoSource source = videoSource;
+        VideoSource source = videoSource;
         videoSource = null;
         if (source != null) {
             source.close();

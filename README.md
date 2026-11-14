@@ -2,7 +2,7 @@
 
 Fabric 1.21.11 客户端加载界面 mod，把**游戏加载**和**世界加载**合在一个 jar 里：
 
-- **A 段（Mixin 引导）**：早期 GLFW 窗口，直接播放 MP4（自动安装 FFmpeg）或帧序列，显示进度条和最新游戏日志。
+- **A 段（Mixin 引导）**：早期 GLFW 窗口，直接播放 MP4（桌面 FFmpeg / Android JCodec）或帧序列，显示进度条和最新游戏日志。
 - **B 段（资源重载 / Mojang logo）**：静态帧背景 + 进度条 + 日志，保留原版 `onFinish`，不会卡 100%。
 - **世界加载（`LevelLoadingScreen`）**：全宽进度条 + 视频背景 + 左下角行楷百分比。
 
@@ -18,7 +18,8 @@ Fabric 1.21.11 客户端加载界面 mod，把**游戏加载**和**世界加载*
 - 文字左对齐 `3%`，14 物理像素高，4 方向深色描边
 - 日志行：Log4j Appender 原样捕获；B 段空档显示 `Loading resource packs...`
 - 字体：LXGW WenKai Lite，外部文件，不进 jar
-- FFmpeg：首次使用自动从 GitHub 下载、校验 SHA-256、解压，用户无需安装
+- 桌面 FFmpeg：首次使用自动从 GitHub 下载、校验 SHA-256、解压，用户无需安装
+- Android JCodec：纯 Java 解码，不需要执行任何二进制，绕开 FCL 的 SELinux/noexec
 
 ## 环境
 
@@ -140,13 +141,23 @@ config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 
 ## Android / FCL
 
-早期 GLFW 窗口在 FCL 上已验证可用。FFmpeg 的问题不是平台识别，而是 **sdcard 通常 noexec**：
-即使 `chmod +x`，从 `/sdcard/...` 也执行不了。
+早期 GLFW 窗口在 FCL 上已验证可用。FCL 上 FFmpeg 的问题有两层：
+
+1. sdcard 是 `noexec`，`chmod +x` 也执行不了；
+2. 改用应用私有 `files/` 后，Android 10+ 的 SELinux/W^X 仍然拒绝
+   `execve()`，日志是 `error=13, Permission denied`。
+
+因此 **Android 不再尝试 FFmpeg**，直接走纯 Java 的
+[JCodec](https://github.com/jcodec/jcodec)（BSD-2-Clause，已 shade 进 jar）。
+JCodec 不需要执行权限，代价是软件解码：4K 很慢，所以整合包额外提供
+`video-mobile.mp4`（960×540 / 15fps）；Android 会优先读它。
+
+下面这段是桌面 FFmpeg 的工具目录逻辑，保留给桌面/其他平台使用：
 
 现在工具目录改为：
 
 1. `-Dfancyloading.ffmpegDir=...` 强制指定
-2. Android: 当前进程的应用私有 `files/fancyloading/tools`
+2. Android（仅手动强制 FFmpeg 时）: 当前进程的应用私有 `files/fancyloading/tools`
 3. 桌面: `<gameDir>/config/fancyloading/tools`
 
 user id 和包名都**不是写死的**。FCL/Pojav 里 JVM 是普通 Linux JVM，
@@ -171,13 +182,17 @@ user id 和包名都**不是写死的**。FCL/Pojav 里 JVM 是普通 Linux JVM�
 -Dfancyloading.androidFilesDir=/data/user/<id>/<包名>/files
 ```
 
-若私有目录仍不允许执行（SELinux/`noexec`），自检会失败并写入
-`.failed` 标记，之后启动直接回退 PNG 帧序列，不会反复下载 25 MB。
-确认环境修复后可用 `-Dfancyloading.ffmpegRetry=1` 清除标记重试。
-旧版留在 sdcard 的 `config/fancyloading/tools` 会被自动清理。
+桌面端若私有目录仍不允许执行，自检会失败并写入 `.failed` 标记，之后启动
+直接回退 PNG 帧序列，不会反复下载 25 MB；可用
+`-Dfancyloading.ffmpegRetry=1` 清除标记重试。旧版留在 sdcard 的
+`config/fancyloading/tools` 会被自动清理。
 
-仍然失败时，说明该 Android 环境不允许执行 app 私有目录，或 Linux 静态
-二进制与 Bionic 不兼容；彻底方案是改用 Android 原生 `.so` / MediaCodec 解码器。
+### Android 视频性能
+
+- 优先 `video-mobile.mp4`（同目录，960×540/15fps），JCodec 在中端 arm64
+  上大约 4–10fps，加载界面够用。
+- 如果没有 mobile 文件，会退回解码 `video.mp4`；4K 源会非常慢，仅保证能出画面。
+- 帧序列始终保留，JCodec 失败/文件缺失时自动使用。
 
 ## 目录结构
 
@@ -194,6 +209,7 @@ fancylaoding/
 │   ├── videoloading.properties.example
 │   └── assets/worldloading/textures/loading/
 ├── config.example/
+├── libs/                 # jcodec-0.2.5.jar + BSD 许可证
 ├── gradle/wrapper/
 ├── gradlew
 └── README.md
@@ -211,12 +227,17 @@ fancylaoding/
 
 ## 已知限制
 
-- 首次播放 MP4 需要联网下载 FFmpeg；离线环境可预置 `config/fancyloading/tools/`。
-- FFmpeg 下载走 GitHub/加速站；网络受限时回退 PNG 序列。
+- 桌面首次播放 MP4 需要联网下载 FFmpeg；离线环境可预置 `config/fancyloading/tools/`。
+- 桌面 FFmpeg 下载走 GitHub/加速站；网络受限时回退 JCodec（优先 mobile）。
+- Android 走 JCodec，4K 源性能很差；请使用 `video-mobile.mp4` 或 PNG 帧序列。
 - 世界加载的 MP4 通过 `DynamicTexture` 每帧更新，低端 GPU 上比 PNG 序列更吃带宽。
 - 与 Fox 的 `fox-party-hud` 同时安装时，对方的 `WorldLoadingScreenMixin` 会取消
   `LevelLoadingScreen.render`，本 mod 的世界加载画面会被它覆盖；两者不要同时用。
 
 ## License
 
-MIT，见 [`LICENSE`](LICENSE)。
+本项目 MIT，见 [`LICENSE`](LICENSE)。
+
+内置/打包的 JCodec 0.2.5 使用 BSD-2-Clause，许可证见
+[`libs/JCODEC_LICENSE.txt`](libs/JCODEC_LICENSE.txt)（也会打进 jar 的
+`META-INF/JCODEC_LICENSE.txt`）。

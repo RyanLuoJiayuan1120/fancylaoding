@@ -1,7 +1,7 @@
 package com.example.worldloading;
 
-import com.example.fancyloading.video.FfmpegProvisioner;
-import com.example.fancyloading.video.FfmpegVideoSource;
+import com.example.fancyloading.video.VideoSource;
+import com.example.fancyloading.video.VideoSources;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
@@ -28,7 +28,7 @@ public final class VideoBackground {
             Identifier.fromNamespaceAndPath("worldloading", "loading/video_frame");
 
     private static long startNanos;
-    private static volatile FfmpegVideoSource videoSource;
+    private static volatile VideoSource videoSource;
     private static volatile boolean videoStarted;
     private static DynamicTexture videoTexture;
     private static NativeImage videoImage;
@@ -55,21 +55,20 @@ public final class VideoBackground {
             return;
         }
         WorldLoadingClient.LOGGER.info("worldloading: MP4 configured at {}", video);
-        FfmpegProvisioner.ensureAsync(FabricLoader.getInstance().getGameDir(), msg ->
-                WorldLoadingClient.LOGGER.info("worldloading: {}", msg)
-        ).thenAccept(ffmpeg -> {
-            try {
-                videoSource = FfmpegVideoSource.start(
-                        ffmpeg, video, WLConfig.videoWidth, WLConfig.videoHeight, WLConfig.videoFps);
-                WorldLoadingClient.LOGGER.info("worldloading: FFmpeg video started {}x{}@{}",
-                        WLConfig.videoWidth, WLConfig.videoHeight, WLConfig.videoFps);
-            } catch (Throwable t) {
-                WorldLoadingClient.LOGGER.warn("worldloading: FFmpeg video failed, using frames", t);
-            }
-        }).exceptionally(t -> {
-            WorldLoadingClient.LOGGER.warn("worldloading: FFmpeg unavailable, using frames: {}", t.toString());
-            return null;
-        });
+        try {
+            VideoSources.startAsync(video,
+                    WLConfig.videoWidth, WLConfig.videoHeight, WLConfig.videoFps,
+                    FabricLoader.getInstance().getGameDir(),
+                    msg -> WorldLoadingClient.LOGGER.info("worldloading: {}", msg),
+                    source -> {
+                        videoSource = source;
+                        WorldLoadingClient.LOGGER.info("worldloading: video source {} ({}x{}@{})",
+                                source.getClass().getSimpleName(),
+                                WLConfig.videoWidth, WLConfig.videoHeight, WLConfig.videoFps);
+                    });
+        } catch (Throwable t) {
+            WorldLoadingClient.LOGGER.warn("worldloading: video source failed, using frames", t);
+        }
     }
 
     public static void begin() {
@@ -79,7 +78,7 @@ public final class VideoBackground {
 
     public static void stop() {
         startNanos = 0L;
-        FfmpegVideoSource source = videoSource;
+        VideoSource source = videoSource;
         videoSource = null;
         if (source != null) source.close();
         videoStarted = false;
@@ -107,7 +106,7 @@ public final class VideoBackground {
     }
 
     private static boolean renderVideo(GuiGraphics ctx, int w, int h) {
-        FfmpegVideoSource source = videoSource;
+        VideoSource source = videoSource;
         if (source == null || !source.hasFirstFrame()) {
             return false;
         }
