@@ -114,6 +114,10 @@ public final class FfmpegProvisioner {
 
             if (FfmpegPaths.isAndroid()) {
                 cleanupLegacy(gameDir, toolRoot, log);
+                if (FfmpegPaths.androidFilesDir() == null) {
+                    log.accept("FFmpeg WARNING: Android private files dir not found, falling back to "
+                            + toolRoot + " (likely noexec)");
+                }
             }
 
             if (Files.isRegularFile(failed) && System.getProperty("fancyloading.ffmpegRetry") == null) {
@@ -130,7 +134,7 @@ public final class FfmpegProvisioner {
 
             Files.createDirectories(dir);
             log.accept("FFmpeg tool dir: " + dir
-                    + (FfmpegPaths.isAndroid() ? " (Android private files, tmp=" + System.getProperty("java.io.tmpdir") + ")" : ""));
+                    + (FfmpegPaths.isAndroid() ? " (Android: " + FfmpegPaths.androidDiagnostics() + ")" : ""));
             Path gz = dir.resolve(asset.file + ".part");
             Path out = dir.resolve(binary.getFileName() + ".part");
             Files.deleteIfExists(gz);

@@ -146,19 +146,29 @@ config/fancyloading/tools/ffmpeg-b6.1.1-<platform>/ffmpeg
 现在工具目录改为：
 
 1. `-Dfancyloading.ffmpegDir=...` 强制指定
-2. Android: `Context.getFilesDir()/fancyloading/tools`（应用私有目录）
+2. Android: 当前进程的应用私有 `files/fancyloading/tools`
 3. 桌面: `<gameDir>/config/fancyloading/tools`
 
-FCL/Pojav 里 JVM 是普通 Linux JVM，`android.app.ActivityThread` 往往不在
-classpath 上。因此先反射 `Context.getFilesDir()`；拿不到时从
-`java.io.tmpdir`（形如 `/data/user/11/com.tungsten.fcl/cache/fclauncher`）
-反推应用私有根目录，落到 `<app>/files/fancyloading/tools`，不再写 sdcard。
+user id 和包名都**不是写死的**。FCL/Pojav 里 JVM 是普通 Linux JVM，
+`android.app.ActivityThread` 往往不在 classpath 上，所以按顺序找：
+
+1. 反射 `Context.getFilesDir()`（能拿到 Android 类时）
+2. 从 `java.io.tmpdir`、`java.home`、`java.library.path`、`TMPDIR`/`HOME`/
+   `ANDROID_DATA` 里抓 `/data/user/<id>/<pkg>`、`/data/user_de/<id>/<pkg>`、
+   `/data/data/<pkg>`
+3. `/proc/self/status` 的 uid（`uid / 100000` 就是 user id）+
+   `/proc/self/cmdline` 的包名，拼出 `/data/user/<id>/<pkg>`
+4. 最后扫 `/proc/self/maps` 里已经加载的 `/data/user/...` 路径
+
+所以国内常见的工作资料 / 应用分身 / 手机分身（user id 10、11、999…）、
+被应用商店或分身工具改过包名的 FCL，都能落到自己的 `files` 目录，不再按
+`11` 或某个固定包名硬编码。
 
 也可显式指定（优先级最高）：
 
 ```text
--Dfancyloading.ffmpegDir=/data/user/0/<FCL包名>/files/fancyloading/tools
--Dfancyloading.androidFilesDir=/data/user/0/<FCL包名>/files
+-Dfancyloading.ffmpegDir=/data/user/<id>/<包名>/files/fancyloading/tools
+-Dfancyloading.androidFilesDir=/data/user/<id>/<包名>/files
 ```
 
 若私有目录仍不允许执行（SELinux/`noexec`），自检会失败并写入
